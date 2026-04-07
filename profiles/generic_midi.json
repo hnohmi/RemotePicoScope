@@ -1,0 +1,15 @@
+{
+  "profile": {
+    "name": "Generic MIDI Controller",
+    "author": "RemotePicoScope",
+    "version": 1,
+    "device_hint": "",
+    "description": "Basic mapping using common CC numbers. Use MIDI Learn to customize."
+  },
+  "midi_channel": 0,
+  "mappings": [
+    { "cc": 1, "parameter": "CH1_VoltsPerDiv", "label": "CC1 -> CH1 V/div", "curve": "stepped", "invert": false },
+    { "cc": 2, "parameter": "TimePerDiv", "label": "CC2 -> Time/div", "curve": "stepped", "invert": false },
+    { "cc": 7, "parameter": "TriggerLevel", "label": "CC7 -> Trigger Level", "curve": "linear", "invert": false }
+  ]
+}

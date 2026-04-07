@@ -1,0 +1,13 @@
+{
+  "name": "remote-picoscope",
+  "version": "0.1.0",
+  "description": "Mixed Signal Oscilloscope UI with MIDI controller support",
+  "dependencies": [
+    {
+      "name": "imgui",
+      "features": ["docking-experimental", "win32-binding", "dx11-binding"]
+    },
+    "nlohmann-json",
+    "rtmidi"
+  ]
+}

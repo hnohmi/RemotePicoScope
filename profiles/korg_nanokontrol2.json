@@ -1,0 +1,29 @@
+{
+  "profile": {
+    "name": "Korg nanoKONTROL2",
+    "author": "RemotePicoScope",
+    "version": 1,
+    "device_hint": "nanoKONTROL2",
+    "description": "Default mapping for Korg nanoKONTROL2 in CC mode"
+  },
+  "midi_channel": 0,
+  "mappings": [
+    { "cc": 0, "parameter": "CH1_VoltsPerDiv", "label": "Slider 1 -> CH1 V/div", "curve": "stepped", "invert": false },
+    { "cc": 1, "parameter": "CH2_VoltsPerDiv", "label": "Slider 2 -> CH2 V/div", "curve": "stepped", "invert": false },
+    { "cc": 2, "parameter": "CH3_VoltsPerDiv", "label": "Slider 3 -> CH3 V/div", "curve": "stepped", "invert": false },
+    { "cc": 3, "parameter": "CH4_VoltsPerDiv", "label": "Slider 4 -> CH4 V/div", "curve": "stepped", "invert": false },
+    { "cc": 4, "parameter": "TimePerDiv", "label": "Slider 5 -> Time/div", "curve": "stepped", "invert": false },
+    { "cc": 5, "parameter": "TriggerLevel", "label": "Slider 6 -> Trigger Level", "curve": "linear", "invert": false },
+    { "cc": 16, "parameter": "CH1_Offset", "label": "Knob 1 -> CH1 Offset", "curve": "linear", "invert": false },
+    { "cc": 17, "parameter": "CH2_Offset", "label": "Knob 2 -> CH2 Offset", "curve": "linear", "invert": false },
+    { "cc": 18, "parameter": "CH3_Offset", "label": "Knob 3 -> CH3 Offset", "curve": "linear", "invert": false },
+    { "cc": 19, "parameter": "CH4_Offset", "label": "Knob 4 -> CH4 Offset", "curve": "linear", "invert": false },
+    { "cc": 20, "parameter": "HorizontalOffset", "label": "Knob 5 -> H Position", "curve": "linear", "invert": false },
+    { "cc": 32, "parameter": "CH1_Enable", "label": "Solo 1 -> CH1 On/Off", "curve": "toggle", "invert": false },
+    { "cc": 33, "parameter": "CH2_Enable", "label": "Solo 2 -> CH2 On/Off", "curve": "toggle", "invert": false },
+    { "cc": 34, "parameter": "CH3_Enable", "label": "Solo 3 -> CH3 On/Off", "curve": "toggle", "invert": false },
+    { "cc": 35, "parameter": "CH4_Enable", "label": "Solo 4 -> CH4 On/Off", "curve": "toggle", "invert": false },
+    { "cc": 41, "parameter": "RunStop", "label": "Play -> Run/Stop", "curve": "toggle", "invert": false },
+    { "cc": 42, "parameter": "SingleShot", "label": "Stop -> Single", "curve": "momentary", "invert": false }
+  ]
+}

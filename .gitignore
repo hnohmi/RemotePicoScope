@@ -1,0 +1,29 @@
+# Build
+build/
+out/
+cmake-build-*/
+
+# vcpkg
+vcpkg_installed/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
+*.vcxproj*
+CMakeSettings.json
+CMakePresets.json
+
+# Claude Code
+.claude/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ImGui
+imgui.ini
+vcpkg

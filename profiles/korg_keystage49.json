@@ -1,0 +1,20 @@
+{
+  "profile": {
+    "name": "Korg Keystage 49",
+    "author": "RemotePicoScope",
+    "version": 1,
+    "device_hint": "Keystage",
+    "description": "Default mapping for Korg Keystage 49 knobs and buttons"
+  },
+  "midi_channel": 0,
+  "mappings": [
+    { "cc": 70, "parameter": "CH1_VoltsPerDiv", "label": "Knob 1 -> CH1 V/div", "curve": "stepped", "invert": false },
+    { "cc": 71, "parameter": "CH2_VoltsPerDiv", "label": "Knob 2 -> CH2 V/div", "curve": "stepped", "invert": false },
+    { "cc": 72, "parameter": "CH3_VoltsPerDiv", "label": "Knob 3 -> CH3 V/div", "curve": "stepped", "invert": false },
+    { "cc": 73, "parameter": "CH4_VoltsPerDiv", "label": "Knob 4 -> CH4 V/div", "curve": "stepped", "invert": false },
+    { "cc": 74, "parameter": "TimePerDiv", "label": "Knob 5 -> Time/div", "curve": "stepped", "invert": false },
+    { "cc": 75, "parameter": "TriggerLevel", "label": "Knob 6 -> Trigger Level", "curve": "linear", "invert": false },
+    { "cc": 76, "parameter": "CH1_Offset", "label": "Knob 7 -> CH1 Offset", "curve": "linear", "invert": false },
+    { "cc": 77, "parameter": "HorizontalOffset", "label": "Knob 8 -> H Position", "curve": "linear", "invert": false }
+  ]
+}
