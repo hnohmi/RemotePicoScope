@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(RemotePicoScope VERSION 0.1.0 LANGUAGES CXX)
+project(RemotePicoScope VERSION 1.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,4 +76,5 @@ target_link_libraries(RemotePicoScope PRIVATE
 add_executable(picoscope-cli
     src/remote/picoscope-cli.cpp
 )
+target_include_directories(picoscope-cli PRIVATE src)
 target_link_libraries(picoscope-cli PRIVATE ws2_32)

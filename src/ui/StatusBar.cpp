@@ -1,4 +1,5 @@
 #include "ui/StatusBar.h"
+#include "core/Version.h"
 #include <imgui.h>
 
 void StatusBar::draw(const ScopeState& state, const SignalData& data,
@@ -85,6 +86,19 @@ void StatusBar::draw(const ScopeState& state, const SignalData& data,
         state.trigger.source + 1,
         state.trigger.edge == TriggerEdge::Rising ? "^" : "v",
         state.trigger.level);
+
+    // Version info on the right edge
+    {
+        char versionBuf[64];
+        snprintf(versionBuf, sizeof(versionBuf),
+            "v%s (proto %s)", Version::APP, Version::CLI_PROTOCOL);
+        float w = ImGui::CalcTextSize(versionBuf).x;
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > w + 12) {
+            ImGui::SameLine(0, avail - w - 8);
+            ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.65f, 1.0f), "%s", versionBuf);
+        }
+    }
 
     ImGui::End();
 }

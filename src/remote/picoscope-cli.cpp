@@ -23,6 +23,8 @@
 #include <string>
 #include <vector>
 
+#include "core/Version.h"
+
 static void printUsage() {
     fprintf(stderr,
         "picoscope-cli — Remote control for RemotePicoScope\n"
@@ -31,6 +33,7 @@ static void printUsage() {
         "\n"
         "Options:\n"
         "  --port PORT   Server port (default: 5575)\n"
+        "  --version     Print client and protocol version and exit\n"
         "\n"
         "Commands:\n"
         "  help                              List available commands\n"
@@ -61,6 +64,10 @@ int main(int argc, char* argv[]) {
             port = std::atoi(argv[++i]);
         } else if (arg == "-h" || arg == "--help") {
             printUsage();
+            return 0;
+        } else if (arg == "--version" || arg == "-V") {
+            printf("picoscope-cli %s (protocol %s)\n",
+                   Version::CLI, Version::CLI_PROTOCOL);
             return 0;
         } else {
             cmdArgs.push_back(arg);

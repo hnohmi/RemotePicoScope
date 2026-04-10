@@ -298,8 +298,12 @@ void PicoSignalSource::configure(const ScopeState& state) {
         PS3000A_BANDWIDTH_LIMITER bw = state.analog[ch].bandwidthLimit
             ? PS3000A_BW_20MHZ : PS3000A_BW_FULL;
 
+        // Do not use the PicoScope hardware analog offset — offset is
+        // applied purely in the display layer. This keeps the sample
+        // buffer holding true probe voltage and ensures the waveform and
+        // the trigger level line stay in lockstep when offset changes.
         ps3000aSetChannel(m_handle, psChannel, enabled ? 1 : 0,
-                          coupling, range, state.analog[ch].verticalOffset);
+                          coupling, range, 0.0f);
         ps3000aSetBandwidthFilter(m_handle, psChannel, bw);
 
         m_currentEnabled[ch] = enabled;
@@ -357,6 +361,8 @@ void PicoSignalSource::configure(const ScopeState& state) {
     PS3000A_THRESHOLD_DIRECTION trigDir =
         (state.trigger.edge == TriggerEdge::Rising) ? PS3000A_RISING : PS3000A_FALLING;
 
+    // No hardware analog offset is applied, so trigger.level maps directly
+    // to ADC counts via the channel range.
     float trigRange = rangeToVolts(m_currentRange[state.trigger.source]);
     int16_t trigThreshold = static_cast<int16_t>(
         (state.trigger.level / trigRange) * m_maxADC);
@@ -510,6 +516,8 @@ void PicoSignalSource::retrieveData(SignalData& data) {
         const int16_t* raw = m_adcBuffers[ch].data();
         float* out = data.analog[ch].samples.data();
 
+        // Hardware analog offset is not used (see configure()), so the
+        // samples already represent true probe voltage.
         for (int i = 0; i < count; i++) {
             out[i] = (static_cast<float>(raw[i]) / maxADCf) * rangeV;
         }

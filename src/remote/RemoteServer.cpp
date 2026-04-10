@@ -1,5 +1,6 @@
 #include "remote/RemoteServer.h"
 #include "core/Measurements.h"
+#include "core/Version.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -229,6 +230,14 @@ std::string RemoteServer::executeCommand(const std::string& cmd, ScopeState& sta
     auto [command, args] = splitCommand(cmd);
 
     if (command == "help")        return cmdHelp();
+    if (command == "version") {
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\""
+           << ",\"app_version\":\"" << Version::APP << "\""
+           << ",\"protocol_version\":\"" << Version::CLI_PROTOCOL << "\""
+           << "}\n";
+        return ss.str();
+    }
     if (command == "get-state")   return cmdGetState(state, data);
     if (command == "set-channel") return cmdSetChannel(args, state);
     if (command == "set-timebase")return cmdSetTimebase(args, state);
@@ -249,6 +258,7 @@ std::string RemoteServer::cmdHelp() {
     return
         "{\"status\":\"ok\",\"commands\":["
         "\"help\","
+        "\"version\","
         "\"get-state\","
         "\"set-channel --ch <A-D> [--range <V/div>] [--coupling <DC|AC>] [--enable] [--disable] [--offset <V>] [--bwlimit]\","
         "\"set-timebase --value <s/div>\","
