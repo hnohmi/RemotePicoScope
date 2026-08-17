@@ -1,5 +1,6 @@
 #include "ui/HorizontalPanel.h"
 #include "ui/Widgets.h"
+#include "core/MemoryEstimate.h"
 #include <imgui.h>
 
 void HorizontalPanel::draw(ScopeState& state) {
@@ -20,8 +21,8 @@ void HorizontalPanel::draw(ScopeState& state) {
     ImGui::TextDisabled("|");
     ImGui::SameLine();
 
-    // Horizontal offset
-    float maxOffset = state.timePerDiv() * GRID_DIVISIONS_X * 0.5f;
+    // Horizontal offset: pan through the captured acquisition span
+    float maxOffset = state.maxHorizontalOffset();
     ImGui::Text("Pos");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(itemWidth);
@@ -34,48 +35,79 @@ void HorizontalPanel::draw(ScopeState& state) {
     ImGui::TextDisabled("|");
     ImGui::SameLine();
 
-    // Record length
+    // Record length: presets up to the device's full 512 MS shared buffer,
+    // with a live host-memory guesstimate so the user can size against RAM.
+    static const int kRecPresets[] = {
+        1000, 10000, 100000, 1000000, 5000000, 10000000,
+        50000000, 100000000, 250000000, 512000000 };
     ImGui::Text("Rec");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100);
-    int recLen = state.recordLength;
-    if (Widgets::SliderInt("##reclen", &recLen, 1000, 100000, "%d", 1000))
-        state.recordLength = recLen;
+    ImGui::SetNextItemWidth(70);
+    std::string recLabel = state.recordAuto
+        ? "Auto" : MemoryEstimate::formatCount(state.recordLength);
+    if (ImGui::BeginCombo("##reclen", recLabel.c_str())) {
+        // Auto (live) mode: sweep sized for display; refresh rate follows
+        // time/div, like a real scope. Fixed lengths are for deep captures.
+        if (ImGui::Selectable("Auto", state.recordAuto))
+            state.recordAuto = true;
+        ImGui::Separator();
+        for (int p : kRecPresets) {
+            bool selected = (!state.recordAuto && state.recordLength == p);
+            std::string label = MemoryEstimate::formatCount(p);
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                state.recordAuto = false;
+                state.recordLength = p;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    // Memory guesstimate, colored by pressure against available host RAM
+    {
+        MemoryEstimate::Breakdown est = MemoryEstimate::estimate(state);
+        uint64_t avail = MemoryEstimate::hostAvailableBytes();
+        ImVec4 col(0.6f, 0.6f, 0.65f, 1.0f);
+        if (avail > 0 && est.total() > avail)
+            col = ImVec4(0.95f, 0.3f, 0.25f, 1.0f);      // exceeds free RAM
+        else if (avail > 0 && est.total() > avail / 2)
+            col = ImVec4(0.95f, 0.7f, 0.2f, 1.0f);       // > half of free RAM
+
+        ImGui::SameLine();
+        ImGui::TextColored(col, "~%s", MemoryEstimate::formatBytes(est.total()).c_str());
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::Text("Host memory estimate for %s samples%s",
+                        MemoryEstimate::formatCount(state.effectiveRecordLength()).c_str(),
+                        state.recordAuto ? " (auto)" : "");
+            ImGui::Separator();
+            ImGui::Text("Analog buffers (4ch float): %s",
+                        MemoryEstimate::formatBytes(est.analogFloat).c_str());
+            ImGui::Text("Driver ADC buffers:         %s",
+                        MemoryEstimate::formatBytes(est.analogAdc).c_str());
+            ImGui::Text("Digital buffers:            %s",
+                        MemoryEstimate::formatBytes(est.digitalBuf).c_str());
+            if (est.staging)
+                ImGui::Text("Retrieval staging:          %s",
+                            MemoryEstimate::formatBytes(est.staging).c_str());
+            if (est.mathBuf)
+                ImGui::Text("Math buffer:                %s",
+                            MemoryEstimate::formatBytes(est.mathBuf).c_str());
+            ImGui::Separator();
+            ImGui::Text("Total: %s   Host free: %s",
+                        MemoryEstimate::formatBytes(est.total()).c_str(),
+                        MemoryEstimate::formatBytes(avail).c_str());
+            ImGui::TextDisabled("Device: 512 MS shared across enabled channels/ports;");
+            ImGui::TextDisabled("the driver may clamp the count at fast timebases.");
+            ImGui::EndTooltip();
+        }
+    }
 
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
 
-    // Trigger source, level, edge (compact)
-    ImGui::Text("Trig");
-    ImGui::SameLine();
-    const char* sourceItems[] = { "CH1", "CH2", "CH3", "CH4" };
-    ImGui::SetNextItemWidth(60);
-    Widgets::Combo("##trigsrc", &state.trigger.source, sourceItems, NUM_ANALOG_CHANNELS);
-
-    ImGui::SameLine();
-    float vPerDiv = state.analog[state.trigger.source].voltsPerDiv();
-    float maxLevel = vPerDiv * GRID_DIVISIONS_Y * 0.5f;
-    ImGui::SetNextItemWidth(90);
-    Widgets::SliderFloat("##triglvl", &state.trigger.level, -maxLevel, maxLevel, "%.2fV");
-
-    ImGui::SameLine();
-    const char* edgeLabels[] = { "Rise", "Fall" };
-    int edgeIdx = static_cast<int>(state.trigger.edge);
-    ImGui::SetNextItemWidth(60);
-    if (Widgets::Combo("##trigedge", &edgeIdx, edgeLabels, 2))
-        state.trigger.edge = static_cast<TriggerEdge>(edgeIdx);
-
-    ImGui::SameLine();
-    const char* modeLabels[] = { "Auto", "Norm", "Single" };
-    int modeIdx = static_cast<int>(state.trigger.mode);
-    ImGui::SetNextItemWidth(65);
-    if (Widgets::Combo("##trigmode", &modeIdx, modeLabels, 3))
-        state.trigger.mode = static_cast<TriggerMode>(modeIdx);
-
-    ImGui::SameLine();
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
+    // Trigger controls live in the Trigger panel (bottom-right tab group) —
+    // deliberately not duplicated here.
 
     // Run/Stop + Single (right side)
     if (state.runMode == RunMode::Run) {

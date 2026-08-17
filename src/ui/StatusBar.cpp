@@ -4,7 +4,8 @@
 
 void StatusBar::draw(const ScopeState& state, const SignalData& data,
                      const MidiEngine& midiEngine, std::function<void()> onSettingsClicked,
-                     const std::string& signalSourceName)
+                     const std::string& signalSourceName,
+                     std::function<void()> onAutoscale)
 {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
     ImGui::Begin("Status", nullptr, flags);
@@ -12,6 +13,12 @@ void StatusBar::draw(const ScopeState& state, const SignalData& data,
     // Settings button (left side)
     if (ImGui::SmallButton("Settings")) {
         if (onSettingsClicked) onSettingsClicked();
+    }
+    ImGui::SameLine();
+
+    // Autoscale button
+    if (ImGui::SmallButton("Auto")) {
+        if (onAutoscale) onAutoscale();
     }
     ImGui::SameLine();
     ImGui::Text("|");

@@ -36,18 +36,26 @@ static void printUsage() {
         "  --version     Print client and protocol version and exit\n"
         "\n"
         "Commands:\n"
-        "  help                              List available commands\n"
-        "  get-state                         Get current oscilloscope state\n"
-        "  set-channel --ch N [--enabled true/false] [--range V] [--offset V]\n"
-        "  set-timebase --timebase_ns N\n"
-        "  set-trigger --source N --level V [--edge rising/falling]\n"
-        "  run                               Start continuous acquisition\n"
-        "  stop                              Stop acquisition\n"
-        "  single                            Single-shot acquisition\n"
-        "  measure --ch N [--type TYPE]      Take measurement\n"
-        "  capture --ch N [--count N] [--file PATH]  Capture waveform data\n"
-        "  siggen --wave TYPE --freq HZ --amp MV [--offset MV]\n"
-        "  siggen --off                      Disable signal generator\n"
+        "  help                              List available commands (from server)\n"
+        "  get-state                         Get full oscilloscope state\n"
+        "  set-channel --ch A-D [--enable|--disable] [--range V] [--coupling DC|AC|GND]\n"
+        "                                    [--offset V] [--bwlimit on|off]\n"
+        "  set-timebase --value S [--offset S]\n"
+        "  set-trigger --source A-D --level V [--edge rising|falling] [--mode auto|normal|single]\n"
+        "  set-digital --ch 0-15|all --enable|--disable\n"
+        "  set-math [--enable|--disable] [--op add|sub|mul|div|fft|ddt|integ|sqrt]\n"
+        "                                    [--src1 A-D] [--src2 A-D] [--window NAME]\n"
+        "  set-cursor [--enable|--disable] [--x1 D] [--x2 D] [--y1 D] [--y2 D]\n"
+        "  get-cursors                       Cursor positions + deltas (dt, 1/dt)\n"
+        "  run | stop | single               Acquisition control\n"
+        "  measure --ch A-D [--type TYPE]    Take measurement\n"
+        "  set-record-length --value N       Set record length (1000-50M)\n"
+        "  capture --ch SRC[,SRC...] [--samples N] [--file PATH]\n"
+        "                                    SRC = A-D | D | D0-D15 | MATH | FFT\n"
+        "  siggen --wave TYPE --freq HZ --amplitude MV [--offset MV] | --off\n"
+        "  list-devices                      Enumerate connected PicoScopes\n"
+        "  connect [--serial SN] [--demo]    Connect hardware or demo source\n"
+        "  disconnect                        Close device, revert to demo\n"
         "\n"
         "The server runs inside the RemotePicoScope GUI application.\n"
     );
@@ -146,8 +154,9 @@ int main(int argc, char* argv[]) {
         printf("%s\n", response.c_str());
     }
 
-    // Return non-zero if response contains "error"
-    if (response.find("\"error\"") != std::string::npos)
+    // Return non-zero only on a top-level error status (not on data fields
+    // that merely contain an "error" key, e.g. decode frames).
+    if (response.find("\"status\":\"error\"") != std::string::npos)
         return 1;
 
     return 0;

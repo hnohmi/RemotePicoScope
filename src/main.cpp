@@ -25,6 +25,10 @@
 #include "core/MathEngine.h"
 #include "core/FFTEngine.h"
 #include "core/SignalBuffer.h"
+#include "core/FrameResults.h"
+#include "core/AutoScale.h"
+#include "core/SetupIO.h"
+#include "decode/SerialDecode.h"
 #include "signal/DummySignalSource.h"
 #include "signal/PicoSignalSource.h"
 #include "midi/MidiEngine.h"
@@ -32,6 +36,7 @@
 #include "midi/MidiProfile.h"
 #include "midi/MidiSettings.h"
 
+#include <algorithm>
 #include <filesystem>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -56,6 +61,112 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 static bool g_firstFrame = true;
+
+// Draw the serial-decode results table (computed from the current capture).
+static void drawDecodePanel(const ScopeState& state, const SignalData& data) {
+    if (!state.decode.enabled) return;
+    ImGui::Begin("Serial Decode");
+
+    const DecodeConfig& d = state.decode;
+    const char* proto = d.protocol == 1 ? "I2C" : (d.protocol == 2 ? "SPI" : "UART");
+    ImGui::Text("%s", proto);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(configure via Digital channels / CLI set-decode)");
+
+    // Throttled decode cache: decoding the whole record every frame stalls
+    // the UI at large record lengths. Recompute at ~2 Hz over at most the
+    // first 5 M samples (CLI get-decode remains full-length, on demand).
+    static std::vector<SerialDecode::Frame> s_frames;
+    static double s_lastDecode = -1.0;
+    double now = ImGui::GetTime();
+    if (data.digital.count > 0 && now - s_lastDecode > 0.5) {
+        s_lastDecode = now;
+        constexpr int kMaxDecodeSamples = 5000000;
+        static DigitalBuffer s_truncated;
+        const DigitalBuffer* src = &data.digital;
+        if (data.digital.count > kMaxDecodeSamples) {
+            s_truncated.samples.assign(data.digital.samples.begin(),
+                                       data.digital.samples.begin() + kMaxDecodeSamples);
+            s_truncated.count = kMaxDecodeSamples;
+            src = &s_truncated;
+        }
+        if (d.protocol == 0) {
+            SerialDecode::UartConfig c; c.lane = d.uartLane; c.baud = d.baud;
+            s_frames = SerialDecode::decodeUart(*src, data.sampleRate, c);
+        } else if (d.protocol == 1) {
+            SerialDecode::I2cConfig c; c.sclLane = d.i2cScl; c.sdaLane = d.i2cSda;
+            s_frames = SerialDecode::decodeI2c(*src, data.sampleRate, c);
+        } else {
+            SerialDecode::SpiConfig c; c.clkLane = d.spiClk; c.mosiLane = d.spiMosi;
+            c.csLane = d.spiCs; c.cpol = d.spiCpol; c.cpha = d.spiCpha;
+            s_frames = SerialDecode::decodeSpi(*src, data.sampleRate, c);
+        }
+    }
+    const std::vector<SerialDecode::Frame>& frames = s_frames;
+
+    if (ImGui::BeginTable("DecodeFrames", 2,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+        ImGui::TableSetupColumn("Time");
+        ImGui::TableSetupColumn("Value");
+        ImGui::TableHeadersRow();
+        for (const auto& f : frames) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(formatEngineering(static_cast<float>(f.tStart), "s").c_str());
+            ImGui::TableNextColumn();
+            if (f.error)
+                ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.3f, 1.0f), "%s", f.text.c_str());
+            else
+                ImGui::TextUnformatted(f.text.c_str());
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
+}
+
+// Evaluate a digital-edge or pattern trigger against the current capture.
+// Used to drive the trigger status indicator (software trigger, e.g. demo mode).
+static bool evalDigitalTrigger(const ScopeState& state, const SignalData& data) {
+    const DigitalBuffer& d = data.digital;
+    if (d.count < 2) return false;
+
+    // Status indicator only — cap the per-frame scan so huge records don't
+    // stall the UI (the hardware trigger itself sees the full record).
+    int count = (d.count > 2000000) ? 2000000 : d.count;
+
+    if (state.trigger.type == TriggerType::Digital) {
+        int lane = state.trigger.digitalSource;
+        for (int i = 1; i < count; i++) {
+            int prev = (d.samples[i - 1] >> lane) & 1;
+            int cur = (d.samples[i] >> lane) & 1;
+            if (state.trigger.edge == TriggerEdge::Rising && prev == 0 && cur == 1) return true;
+            if (state.trigger.edge == TriggerEdge::Falling && prev == 1 && cur == 0) return true;
+        }
+        return false;
+    }
+
+    // Pattern: any sample matching all specified lane conditions.
+    for (int i = 0; i < count; i++) {
+        uint16_t s = d.samples[i];
+        bool match = true;
+        for (int lane = 0; lane < NUM_DIGITAL_CHANNELS; lane++) {
+            int c = state.trigger.digitalPattern[lane];
+            if (c == 0) continue;
+            int bit = (s >> lane) & 1;
+            if ((c == 1 && bit != 1) || (c == 2 && bit != 0)) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+// NOTE: probe attenuation and invert are applied inside the signal sources at
+// data-production time (PicoSignalSource::retrieveData / DummySignalSource::
+// acquire). Do NOT post-multiply the persistent signalData buffer here: the
+// Pico source keeps the previous capture on frames where no new block is
+// ready, and an in-place post-pass would re-multiply that stale data every
+// frame (the signal visibly "gains up" on real hardware).
 
 // Get the directory where the executable is located
 static std::string getExeDirectory() {
@@ -112,7 +223,10 @@ static void setupDefaultDockLayout(ImGuiID dockspaceId) {
     ImGui::DockBuilderFinish(dockspaceId);
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
+    std::string cmdLine = lpCmdLine ? lpCmdLine : "";
+    bool freshStart = cmdLine.find("--fresh") != std::string::npos;
+
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.style = CS_CLASSDC;
@@ -173,6 +287,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         profileDir = getExeDirectory() + "\\profiles";
     if (!std::filesystem::exists(profileDir))
         profileDir = "profiles"; // relative to cwd
+
+    // Restore the previous session's setup (unless launched with --fresh).
+    std::string sessionPath = profileDir + "\\last_session.json";
+    if (!freshStart)
+        SetupIO::load(sessionPath, state);
 
     // MIDI settings (device/profile associations)
     // Save next to profiles directory for consistency
@@ -312,11 +431,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         // Don't acquire while device selection popup is open
         bool shouldAcquire = !deviceSelectPopup.isVisible();
 
+        // Streaming recorder: drain every frame regardless of run mode (the
+        // driver ring must not overflow); feeds a rolling live view.
+        picoSource.serviceRecording(signalData);
+
         // Acquire signals
         if (shouldAcquire && state.runMode == RunMode::Run) {
             activeSource->configure(state);
             activeSource->acquire(signalData);
-            state.triggerStatus = TriggerStatus::Auto;
+            if (state.trigger.type == TriggerType::Edge)
+                state.triggerStatus = TriggerStatus::Auto;
+            else
+                state.triggerStatus = evalDigitalTrigger(state, signalData)
+                    ? TriggerStatus::Triggered : TriggerStatus::Armed;
         } else if (shouldAcquire && state.runMode == RunMode::Single) {
             activeSource->configure(state);
             activeSource->acquire(signalData);
@@ -326,10 +453,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
             state.triggerStatus = TriggerStatus::Stopped;
         }
 
-        // Process remote commands (main thread — safe to touch state)
-        remoteServer.processCommands(state, signalData, picoSource);
-
-        // Compute math channel
+        // Compute math channel first, so the remote server can expose this
+        // frame's math/FFT results to the CLI.
         if (state.mathChannel.enabled) {
             if (state.mathChannel.op == MathOp::FFT) {
                 fftResult = fftEngine.compute(
@@ -340,6 +465,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
             }
         }
 
+        // Bundle per-frame computed results for the remote server.
+        FrameResults frameResults;
+        frameResults.mathEnabled = state.mathChannel.enabled;
+        frameResults.mathOp = state.mathChannel.op;
+        if (state.mathChannel.enabled) {
+            if (state.mathChannel.op == MathOp::FFT)
+                frameResults.fft = &fftResult;
+            else
+                frameResults.math = &mathBuffer;
+        }
+
+        // Process remote commands (main thread — safe to touch state)
+        remoteServer.processCommands(state, signalData, frameResults, picoSource);
+
+        // A remote connect/disconnect selects the source, so dismiss the
+        // startup popup to allow fully headless (CLI-driven) operation.
+        if (remoteServer.takeSourceSelected())
+            deviceSelectPopup.hide();
+
+        // Re-clamp the horizontal pan: its valid range depends on time/div
+        // and record mode, which any mutation path (UI, MIDI, CLI, setup
+        // recall) may have just changed. Setters clamp only at set-time, so
+        // without this a stale pan can sit outside the captured span and
+        // blank every trace.
+        {
+            float maxOff = state.maxHorizontalOffset();
+            state.horizontalOffset = std::clamp(state.horizontalOffset, -maxOff, maxOff);
+        }
+
         // Draw all panels
         waveformDisplay.draw(state, signalData, &mathBuffer, &fftResult);
         channelPanel.draw(state);
@@ -348,8 +502,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         mathPanel.draw(state);
         sigGenPanel.draw(picoSource);
         measurementPanel.draw(state, signalData);
+        drawDecodePanel(state, signalData);
         statusBar.draw(state, signalData, midiEngine, [&]() { midiConfigPanel.toggle(); },
-                       activeSource->name());
+                       activeSource->name(),
+                       [&]() { AutoScale::apply(state, signalData); });
 
         // Settings popup (hidden until settings button clicked)
         midiConfigPanel.draw(midiEngine, midiMapping, currentProfile, profileDir,
@@ -367,6 +523,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     // Stop remote server
     remoteServer.stop();
+
+    // Persist the current setup for next launch
+    SetupIO::save(sessionPath, state);
 
     // Save current MIDI mapping and settings before exit
     if (!currentProfile.name.empty() && !currentProfile.filePath.empty()) {

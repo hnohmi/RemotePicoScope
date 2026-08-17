@@ -1,7 +1,9 @@
 #include "ui/WaveformDisplay.h"
 #include <imgui.h>
+#include <algorithm>
+#include <cmath>
 
-void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
+void WaveformDisplay::draw(ScopeState& state, const SignalData& data,
                            const AnalogBuffer* mathBuffer,
                            const FFTResult* fftResult)
 {
@@ -15,6 +17,8 @@ void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
     for (int i = 0; i < NUM_DIGITAL_CHANNELS; i++) {
         if (state.digital[i].enabled) { hasDigital = true; break; }
     }
+    for (const auto& b : state.buses)
+        if (b.enabled && !b.lanes.empty()) { hasDigital = true; break; }
 
     bool showFFT = (state.mathChannel.enabled &&
                     state.mathChannel.op == MathOp::FFT &&
@@ -60,7 +64,7 @@ void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
     for (int ch = 0; ch < NUM_ANALOG_CHANNELS; ch++) {
         if (state.analog[ch].enabled) {
             m_renderer.drawAnalogChannel(dl, analogPos, analogSize,
-                data.analog[ch], state.analog[ch], state,
+                data.analog[ch], data.sampleRate, state.analog[ch], state,
                 ChannelColors::analog(ch));
         }
     }
@@ -79,11 +83,15 @@ void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
             state.mathChannel.scale);
 
         m_renderer.drawAnalogChannel(dl, analogPos, analogSize,
-            *mathBuffer, mathCh, state, ChannelColors::Math);
+            *mathBuffer, data.sampleRate, mathCh, state, ChannelColors::Math);
     }
 
     // Trigger indicator
     m_renderer.drawTriggerIndicator(dl, analogPos, analogSize, state);
+
+    // Measurement cursors (display-plane objects; readouts go through the
+    // cursor source channel's view transform)
+    m_cursorOverlay.draw(state, analogPos, analogSize);
 
     // Time/div label
     {
@@ -100,8 +108,12 @@ void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
         float labelY = analogPos.y + 4;
         for (int ch = 0; ch < NUM_ANALOG_CHANNELS; ch++) {
             if (!state.analog[ch].enabled) continue;
-            std::string label = "CH" + std::to_string(ch + 1) + ": " +
-                formatEngineering(state.analog[ch].voltsPerDiv(), "V/div");
+            const ChannelState& cs = state.analog[ch];
+            std::string name = cs.label.empty() ? ("CH" + std::to_string(ch + 1)) : cs.label;
+            std::string label = name + ": " + formatEngineering(cs.voltsPerDiv(), "V/div");
+            if (cs.probeAttenuation != 1.0f)
+                label += " " + std::to_string(static_cast<int>(cs.probeAttenuation)) + "x";
+            if (cs.invert) label += " INV";
             dl->AddText(ImVec2(analogPos.x + 8, labelY),
                 ChannelColors::analog(ch), label.c_str());
             labelY += ImGui::GetTextLineHeight() + 2;
@@ -114,8 +126,71 @@ void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
         }
     }
 
-    // Advance cursor past analog area
-    ImGui::Dummy(analogSize);
+    // --- XY control over the analog area (display layer) ---
+    // Horizontal drag pans the timebase window; vertical drag moves the
+    // vertical offset of the trace grabbed at drag start. Offsets are pure
+    // draw-time Y translations — the sample buffer is never modified.
+    if (analogSize.x > 1.0f && analogSize.y > 1.0f) {
+        ImGui::InvisibleButton("##waveform_xy", analogSize);
+
+        float pixelsPerDivX = analogSize.x / GRID_DIVISIONS_X;
+        float pixelsPerDivY = analogSize.y / GRID_DIVISIONS_Y;
+        float centerY = analogPos.y + analogSize.y * 0.5f;
+
+        if (ImGui::IsItemActivated()) {
+            // Grab the enabled trace nearest the cursor (within 40 px).
+            m_dragChannel = -1;
+            ImVec2 mouse = ImGui::GetIO().MousePos;
+            float best = 40.0f;
+            // Same time-aware mapping as the renderer (record center anchored
+            // at view center, density from the actual sample rate).
+            double viewSpan = static_cast<double>(state.timePerDiv()) * GRID_DIVISIONS_X;
+            for (int ch = 0; ch < NUM_ANALOG_CHANNELS; ch++) {
+                const ChannelState& cs = state.analog[ch];
+                if (!cs.enabled || data.analog[ch].count < 1) continue;
+                int count = data.analog[ch].count;
+                double dt = (data.sampleRate > 0) ? 1.0 / data.sampleRate : viewSpan / count;
+                double spw = viewSpan / dt;
+                double first = (count - 1) * 0.5 - spw * 0.5
+                               + static_cast<double>(state.horizontalOffset) / dt;
+                double s = first + (mouse.x - analogPos.x) / analogSize.x * spw;
+                if (s < 0.0 || s > count - 1) continue; // outside the record
+                int idx = static_cast<int>(s);
+                float v = data.analog[ch].samples[idx];
+                float y = centerY - ((v + cs.verticalOffset) / cs.voltsPerDiv()) * pixelsPerDivY;
+                float d = fabsf(mouse.y - y);
+                if (d < best) { best = d; m_dragChannel = ch; }
+            }
+        }
+
+        if (ImGui::IsItemActive()) {
+            ImVec2 delta = ImGui::GetIO().MouseDelta;
+
+            // X: pan the time window (drag right = waveform moves right)
+            if (delta.x != 0.0f) {
+                float maxHOff = state.maxHorizontalOffset();
+                state.horizontalOffset = std::clamp(
+                    state.horizontalOffset - delta.x * state.timePerDiv() / pixelsPerDivX,
+                    -maxHOff, maxHOff);
+            }
+
+            // Y: move the grabbed channel's offset (drag = trace follows mouse)
+            if (delta.y != 0.0f && m_dragChannel >= 0) {
+                ChannelState& cs = state.analog[m_dragChannel];
+                float maxVOff = cs.voltsPerDiv() * GRID_DIVISIONS_Y * 0.5f;
+                cs.verticalOffset = std::clamp(
+                    cs.verticalOffset - delta.y * cs.voltsPerDiv() / pixelsPerDivY,
+                    -maxVOff, maxVOff);
+            }
+        } else if (ImGui::IsItemDeactivated()) {
+            m_dragChannel = -1;
+        }
+
+        if (ImGui::IsItemHovered())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    } else {
+        ImGui::Dummy(analogSize);
+    }
 
     // --- FFT section ---
     if (showFFT && fftH > 20.0f) {
@@ -142,7 +217,7 @@ void WaveformDisplay::draw(const ScopeState& state, const SignalData& data,
             IM_COL32(8, 12, 8, 255));
 
         m_renderer.drawDigitalChannels(dl, digitalPos, digitalSize,
-            data.digital, state);
+            data.digital, data.sampleRate, state);
 
         ImGui::Dummy(digitalSize);
     }

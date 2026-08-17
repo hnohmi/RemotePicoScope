@@ -1,6 +1,8 @@
 #include "ui/CursorOverlay.h"
+#include "render/ViewTransform.h"
 #include <imgui.h>
 #include <cstdio>
+#include <algorithm>
 
 void CursorOverlay::draw(ScopeState& state, ImVec2 pos, ImVec2 size) {
     if (!state.cursors.enabled) return;
@@ -50,16 +52,27 @@ void CursorOverlay::draw(ScopeState& state, ImVec2 pos, ImVec2 size) {
     drawDashedHLine(y1px);
     drawDashedHLine(y2px);
 
-    // Delta readout box
-    float dt = (state.cursors.x2 - state.cursors.x1) * state.timePerDiv();
-    float dv = (state.cursors.y2 - state.cursors.y1); // in divisions
-    // Convert dv to volts using CH1's V/div as reference
-    float dvVolts = dv * state.analog[0].voltsPerDiv();
+    // Delta readout box.
+    // Cursors live on the display plane (divisions). Voltage readouts go
+    // through the cursor *source* channel's view: the channel's V/div scales
+    // the deltas, and its display offset shifts the absolute values — exactly
+    // as the waveform itself is drawn. Other channels' settings are ignored.
+    int src = std::clamp(state.cursors.source, 0, NUM_ANALOG_CHANNELS - 1);
+    ChannelView view = ChannelView::forChannel(state.analog[src], pos, size);
 
-    char readout[128];
-    snprintf(readout, sizeof(readout), "dT: %s  1/dT: %s\ndV: %s",
+    float dt = (state.cursors.x2 - state.cursors.x1) * state.timePerDiv();
+    float v1 = view.voltsFromScreenDiv(state.cursors.y1);
+    float v2 = view.voltsFromScreenDiv(state.cursors.y2);
+    float dvVolts = v2 - v1; // offset cancels: depends only on V/div
+
+    char readout[192];
+    snprintf(readout, sizeof(readout),
+        "dT: %s  1/dT: %s\nCH%d  Y1: %s  Y2: %s  dV: %s",
         formatEngineering(dt, "s").c_str(),
         (dt != 0.0f) ? formatEngineering(1.0f / dt, "Hz").c_str() : "---",
+        src + 1,
+        formatEngineering(v1, "V").c_str(),
+        formatEngineering(v2, "V").c_str(),
         formatEngineering(dvVolts, "V").c_str());
 
     ImVec2 textSize = ImGui::CalcTextSize(readout);

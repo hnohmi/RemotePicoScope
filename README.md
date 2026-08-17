@@ -6,17 +6,36 @@ Includes a built-in demo mode with simulated signals, so you can explore the UI 
 
 ## Features
 
-- **4 analog channels** with configurable range (10 mV/div to 50 V/div), coupling (AC/DC), and offset
-- **16 digital channels** (MSO) displayed as logic lanes
-- **Math channels** — add, subtract, multiply, divide, derivative, integral, sqrt of any two channels
-- **FFT spectrum analysis** with selectable window functions (Hanning, Hamming, Blackman-Harris, Flat Top)
-- **Automatic measurements** — frequency, period, Vpp, Vrms, Vavg, Vmax, Vmin, rise/fall time, duty cycle
-- **Cursors** — horizontal and vertical with delta readout
-- **Trigger control** — edge trigger with configurable source, level, slope, and mode (auto/normal)
+### Analog
+- **4 analog channels** — 1 mV/div to 100 V/div, AC/DC/GND coupling, display offset, bandwidth limit, **probe attenuation (1×/10×/100×)**, invert, custom labels
+- **Trigger** — edge (analog), **digital edge**, and **digital pattern** trigger; auto/normal/single; probe-aware level conversion
+- **Math channel** — add, subtract, multiply, divide, derivative, integral, sqrt
+- **FFT spectrum analysis** with selectable window functions
+- **Automatic measurements** with noise-robust frequency detection; cursors with per-channel voltage readouts
+- **Autoscale** — one command/button signal find
+
+### Mixed-signal (MSO)
+- **16 digital channels** with configurable logic thresholds (TTL / 3.3 V / 1.8 V CMOS / custom, per port)
+- **Serial protocol decode** — UART, I2C, SPI, with a live decode table and CLI frame export
+- **Digital buses** — group lanes into named hex/bin/dec value tracks
+- **VCD export** — digital captures load directly into GTKWave / HDL simulators
+
+### Acquisition (three modes)
+- **Live (auto, default)** — rapid-block batches: the hardware captures back-to-back triggered sweeps (~1 µs re-arm) and the display animates through them, one trigger per frame (skipping evenly when triggers outrun the frame rate); each sweep spans 3 windows — the active window plus one full window either side for timeshift
+- **Deep (fixed)** — up to **512 M samples** per sweep (the 3406D's full memory) with a host-RAM estimate shown; chunked retrieval keeps the UI responsive
+- **Recording** — **gapless streaming to disk** for hours (`start-recording`), int16 binary + JSON sidecar, with a rolling live view while recording
+
+### Control & UX
 - **Signal generator control** — built-in sig gen output (sine, square, triangle, ramp, DC, etc.)
+- **Drag the waveform** to pan time (X) and move a channel's offset (Y); per-channel ground markers
+- **Setup save/recall** + automatic session persistence
 - **MIDI controller support** — map physical knobs/faders to oscilloscope parameters with JSON profiles
 - **Dockable panel layout** — rearrange panels freely via ImGui docking
-- **TCP remote control** — programmatic control via CLI tool (see below)
+- **TCP remote control** — full CLI/automation parity: every setting and all wave data (analog, digital, math, FFT, decoded frames) is accessible remotely; designed for AI-assisted hardware bring-up
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the data/display layering that keeps
+display settings (offset, probe scaling views) strictly out of the measurement
+data path.
 
 ## Screenshots
 
@@ -89,17 +108,26 @@ Supported hardware:
 The application includes a TCP server (port 5575) and a companion CLI tool for programmatic control. This is designed for AI-assisted hardware development workflows — for example, having an AI agent control the oscilloscope while you monitor the display.
 
 ```cmd
-REM Check oscilloscope state
-build\Release\picoscope-cli.exe get-state
+REM Connect to the scope (no GUI interaction needed — fully headless)
+build\Release\picoscope-cli.exe connect
 
-REM Configure channel A for 3.3V logic
-build\Release\picoscope-cli.exe set-channel --ch A --enable --range 1.0
+REM Configure channel A for 3.3V logic with a 10x probe
+build\Release\picoscope-cli.exe set-channel --ch A --enable --range 1.0 --probe 10
 
-REM Measure frequency
+REM Digital: 3.3V CMOS thresholds, decode UART on D0
+build\Release\picoscope-cli.exe set-digital --ch all --enable
+build\Release\picoscope-cli.exe set-digital --threshold 1.65 --group all
+build\Release\picoscope-cli.exe set-decode --protocol uart --lane 0 --baud 115200 --enable
+build\Release\picoscope-cli.exe get-decode
+
+REM Measure, capture (analog, digital, MATH, FFT, or several at once)
 build\Release\picoscope-cli.exe measure --ch A --type frequency
+build\Release\picoscope-cli.exe capture --ch A,B,D --file waveform.csv
+build\Release\picoscope-cli.exe capture --ch D --file capture.vcd
 
-REM Capture waveform data
-build\Release\picoscope-cli.exe capture --ch A --samples 2000
+REM Gapless recording to disk
+build\Release\picoscope-cli.exe start-recording --file run1.bin --rate 1000000 --ch A,B
+build\Release\picoscope-cli.exe stop-recording
 
 REM Control signal generator
 build\Release\picoscope-cli.exe siggen --wave sine --freq 1000 --amplitude 2000
@@ -117,15 +145,24 @@ Supported controllers are auto-detected on launch. Configure mappings via the se
 
 ```
 src/
-  core/          State management, measurements, math, FFT
-  render/        DirectX 11 context and waveform rendering
-  signal/        Signal sources (PicoScope hardware + dummy)
+  core/          State management, measurements, math, FFT, setup I/O,
+                 autoscale, memory estimation, VCD export
+  decode/        Serial protocol decoders (UART, I2C, SPI)
+  render/        DirectX 11 context, waveform rendering, view transform
+  signal/        Signal sources (PicoScope hardware + demo) and the
+                 streaming recorder
   ui/            ImGui panels and display
   midi/          MIDI engine, mapping, profiles
   remote/        TCP server and CLI tool
   vendor/        Vendored libraries (KissFFT)
 profiles/        MIDI controller profiles
+tests/           CLI smoke-test suite (runs against demo mode)
 ```
+
+Additional docs: [ARCHITECTURE.md](ARCHITECTURE.md) (data/display layering),
+[src/remote/PICOSCOPE-CLI.md](src/remote/PICOSCOPE-CLI.md) (full remote-control
+reference), [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) and
+[FEATURE-WISHLIST.md](FEATURE-WISHLIST.md) (roadmap).
 
 ## Dependencies
 

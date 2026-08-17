@@ -28,12 +28,22 @@ MeasurementResult Measurements::compute(const AnalogBuffer& buffer, float sample
     r.vavg = static_cast<float>(sum / buffer.count);
     r.vrms = static_cast<float>(std::sqrt(sumSq / buffer.count));
 
-    // Frequency via zero-crossing detection (using mean as threshold)
+    // Frequency via crossing detection with hysteresis. A bare comparison
+    // against the mean fires on every noise wiggle near the threshold (real
+    // hardware!), inflating the crossing count and thus the frequency. Arm
+    // below (mean - hyst) and fire above (mean + hyst); the detection lag
+    // cancels in the period difference.
     float threshold = r.vavg;
+    float hyst = 0.05f * r.vpp; // 5% of Vpp noise band
     std::vector<int> risingCrossings;
-    for (int i = 1; i < buffer.count; i++) {
-        if (buffer.samples[i - 1] < threshold && buffer.samples[i] >= threshold) {
+    bool armed = false;
+    for (int i = 0; i < buffer.count; i++) {
+        float v = buffer.samples[i];
+        if (v < threshold - hyst) {
+            armed = true;
+        } else if (armed && v > threshold + hyst) {
             risingCrossings.push_back(i);
+            armed = false;
         }
     }
 

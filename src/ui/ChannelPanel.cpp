@@ -41,6 +41,25 @@ static void drawAnalogChannelRow(int ch, ChannelState& cs) {
             float maxOffset = cs.voltsPerDiv() * GRID_DIVISIONS_Y * 0.5f;
             ImGui::SetNextItemWidth(halfWidth);
             Widgets::SliderFloat("##off", &cs.verticalOffset, -maxOffset, maxOffset, "%.2fV");
+
+            // Row 3: Probe attenuation + Invert
+            const char* probeItems[] = { "1x", "10x", "100x" };
+            const float probeVals[] = { 1.0f, 10.0f, 100.0f };
+            int probeIdx = 0;
+            for (int p = 0; p < 3; p++)
+                if (cs.probeAttenuation == probeVals[p]) probeIdx = p;
+            ImGui::SetNextItemWidth(halfWidth);
+            if (Widgets::Combo("##probe", &probeIdx, probeItems, 3))
+                cs.probeAttenuation = probeVals[probeIdx];
+            ImGui::SameLine();
+            ImGui::Checkbox("Inv", &cs.invert);
+
+            // Row 4: Label
+            char labelBuf[32];
+            snprintf(labelBuf, sizeof(labelBuf), "%s", cs.label.c_str());
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("##label", "label", labelBuf, sizeof(labelBuf)))
+                cs.label = labelBuf;
         }
     }
 
@@ -56,6 +75,30 @@ static void drawDigitalTab(ScopeState& state) {
     if (ImGui::Button("All Off")) {
         for (int i = 0; i < NUM_DIGITAL_CHANNELS; i++)
             state.digital[i].enabled = false;
+    }
+
+    ImGui::Spacing();
+
+    // Per-port logic thresholds
+    {
+        const char* presetNames[] = { "TTL 1.5V", "3.3V CMOS", "1.8V CMOS", "Custom" };
+        const float presetVals[] = { 1.5f, 1.65f, 0.9f };
+        for (int port = 0; port < 2; port++) {
+            ImGui::PushID(port + 100);
+            ImGui::TextUnformatted(port == 0 ? "D0-D7 thr" : "D8-15 thr");
+            ImGui::SameLine();
+            int presetIdx = 3;
+            for (int p = 0; p < 3; p++)
+                if (state.digitalThreshold[port] == presetVals[p]) presetIdx = p;
+            ImGui::SetNextItemWidth(90);
+            if (Widgets::Combo("##thpreset", &presetIdx, presetNames, 4)) {
+                if (presetIdx < 3) state.digitalThreshold[port] = presetVals[presetIdx];
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90);
+            Widgets::SliderFloat("##thval", &state.digitalThreshold[port], -5.0f, 5.0f, "%.2fV");
+            ImGui::PopID();
+        }
     }
 
     ImGui::Spacing();

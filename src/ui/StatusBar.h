@@ -11,5 +11,6 @@ public:
     // signalSourceName: display name of the active signal source
     void draw(const ScopeState& state, const SignalData& data,
               const MidiEngine& midiEngine, std::function<void()> onSettingsClicked,
-              const std::string& signalSourceName = "");
+              const std::string& signalSourceName = "",
+              std::function<void()> onAutoscale = nullptr);
 };

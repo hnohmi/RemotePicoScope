@@ -54,6 +54,7 @@ REM --- App folder: GUI exe + profiles + README + LICENSE ---
 copy /y "build\Release\RemotePicoScope.exe" "%PKG_DIR%\app\" >nul || goto :error
 copy /y "profiles\*.json"                    "%PKG_DIR%\app\profiles\" >nul || goto :error
 copy /y "README.md"                          "%PKG_DIR%\app\" >nul || goto :error
+copy /y "ARCHITECTURE.md"                    "%PKG_DIR%\app\" >nul || goto :error
 copy /y "LICENSE"                            "%PKG_DIR%\app\" >nul || goto :error
 
 REM --- Remote folder: CLI exe + doc + LICENSE ---
@@ -76,6 +77,7 @@ echo Package layout:
 echo   %PKG_DIR%\app\RemotePicoScope.exe
 echo   %PKG_DIR%\app\profiles\*.json
 echo   %PKG_DIR%\app\README.md
+echo   %PKG_DIR%\app\ARCHITECTURE.md
 echo   %PKG_DIR%\app\LICENSE
 echo   %PKG_DIR%\remote\picoscope-cli.exe
 echo   %PKG_DIR%\remote\PICOSCOPE-CLI.md

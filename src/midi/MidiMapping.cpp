@@ -128,7 +128,7 @@ void MidiMapping::applyValue(ParameterID id, float value, ScopeState& state) {
             state.timePerDivIndex = static_cast<int>(value);
             break;
         case ParameterID::HorizontalOffset: {
-            float maxOff = state.timePerDiv() * GRID_DIVISIONS_X * 0.5f;
+            float maxOff = state.maxHorizontalOffset();
             state.horizontalOffset = value * maxOff;
             break;
         }

@@ -16,6 +16,10 @@ public:
 
     bool isVisible() const { return m_visible; }
 
+    // Dismiss the popup programmatically (e.g. when the source is selected
+    // over the remote/CLI interface so headless operation can proceed).
+    void hide() { m_visible = false; }
+
 private:
     bool m_visible = false;
     bool m_needsOpen = false;        // deferred ImGui::OpenPopup

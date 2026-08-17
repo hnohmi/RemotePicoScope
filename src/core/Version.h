@@ -13,7 +13,7 @@
 // so a mismatch can be detected and reported to the user.
 
 namespace Version {
-    constexpr const char* APP          = "1.0.1";
-    constexpr const char* CLI          = "1.0.1";
-    constexpr const char* CLI_PROTOCOL = "1.0";
+    constexpr const char* APP          = "1.1.0";
+    constexpr const char* CLI          = "1.1.0";
+    constexpr const char* CLI_PROTOCOL = "1.1";
 }

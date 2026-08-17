@@ -27,6 +27,18 @@ constexpr int GRID_DIVISIONS_X = 10;
 constexpr int GRID_DIVISIONS_Y = 8;
 constexpr int GRID_SUBDIVISIONS = 5;
 
+// Acquisition span in display windows (trigger centered), so the view can
+// pan away from the trigger point through real captured data. Capped in
+// absolute time so slow timebases don't make sweeps unbearably long.
+//  - Auto record mode (live): 3 windows — the active window with the trigger
+//    at its center, plus one full window of pre- and post-trigger timeshift
+//    headroom. Kept short so rapid-block batches re-arm fast and the display
+//    can animate trigger-by-trigger.
+//  - Fixed record mode (deep memory): ACQ_WINDOW_MULT windows.
+constexpr int ACQ_FAST_WINDOW_MULT = 3;
+constexpr int ACQ_WINDOW_MULT = 10;
+constexpr float ACQ_MAX_SPAN_SEC = 10.0f;
+
 // Standard oscilloscope 1-2-5 sequence for V/div and time/div
 namespace Sequence125 {
     // V/div values in volts: 1mV to 100V
@@ -148,6 +160,21 @@ enum class TriggerEdge : int {
     Rising = 0,
     Falling = 1
 };
+
+enum class TriggerType : int {
+    Edge = 0,     // analog channel edge
+    Digital = 1,  // single digital lane edge
+    Pattern = 2   // digital pattern match
+};
+
+inline const char* triggerTypeName(TriggerType t) {
+    switch (t) {
+        case TriggerType::Edge:    return "edge";
+        case TriggerType::Digital: return "digital";
+        case TriggerType::Pattern: return "pattern";
+    }
+    return "edge";
+}
 
 enum class TriggerMode : int {
     Auto = 0,
